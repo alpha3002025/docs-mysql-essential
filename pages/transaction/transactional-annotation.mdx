@@ -104,9 +104,9 @@ COMMIT;
 
 ### @Transactional 메서드는 프록시 객체에서 실행
 
-@Transactional 을 명시한 메서드는 스프링에 의해서 내부적으로는 해당 메서드가 속한 클래스를 상속(extends)받은 새로운 확장 클래스 객체를 생성하고 이것을 프록시 객체로 사용합니다. 이 프록시 객체가 실제로 Database 연산을 수행하고 Commit, Rollback, Resource 반납 등의 연산을 수행하게 됩니다.<br/> 
+@Transactional 을 명시한 메서드는 스프링 AOP 프록시를 통해 실행됩니다. 이 프록시는 메서드 호출 전후로 트랜잭션 처리를 연결하고, 내부적으로 TransactionManager 를 이용해 트랜잭션 시작, 커밋, 롤백, 자원 반납 등의 작업을 수행합니다.<br/>
 
-Spring Data 는 AOP 기반으로 `@Transactional` 이 붙은 메서드/클래스/인터페이스에 대해 커넥션획득,Commit, Rollback, 자원반납 등의 작업을 전처리/후처리 하도록 되어 있습니다. 이런 동작으로 인해 간단하게 우리가 작성한 코드의 메서드 위에 `@Transactional` 을 붙이는 것 만으로 해당 메서드 내의 연산은 마치 하나의 연산인 것처럼 원자적 연산을 할 수 있게 됩니다.<br/>
+Spring Framework 는 AOP 기반으로 `@Transactional` 이 붙은 메서드/클래스/인터페이스에 대해 커넥션 획득, Commit, Rollback, 자원 반납 등의 작업을 전처리/후처리 하도록 되어 있습니다. 이런 동작으로 인해 간단하게 우리가 작성한 코드의 메서드 위에 `@Transactional` 을 붙이는 것 만으로 해당 메서드 내의 연산은 마치 하나의 연산인 것처럼 원자적 연산을 할 수 있게 됩니다.<br/>
 
 > 이번 문서에서는 프록시 객체에 대해 가급적 단순하게 설명했습니다. 실제로는 Proxy 객체를 만들어내는 방식은 조금 복잡합니다. Proxy 라이브러리로 알려진 cglib 등을 이용해서 프록시를 수행합니다.<br/>
 <br/>
@@ -157,7 +157,7 @@ Spring Data 는 AOP 기반으로 `@Transactional` 이 붙은 메서드/클래스
 
 ## Exception 발생 시 스프링의 커밋/롤백 정책
 
-체크드, 언체크드 예외인지에 따라서 아래와 같이 커밋/롤백 여부가 달라집니다.
+스프링의 기본 롤백 정책에서는 체크드, 언체크드 예외인지에 따라서 아래와 같이 커밋/롤백 여부가 달라집니다.
 
 - 언체크 예외(Unchecked Exception)
   - [RuntimeException (Java SE 9 & JDK 9 )](https://docs.oracle.com/javase/9/docs/api/java/lang/RuntimeException.html)
@@ -168,7 +168,7 @@ Spring Data 는 AOP 기반으로 `@Transactional` 이 붙은 메서드/클래스
   - [Exception (Java Platform SE 8 )](https://docs.oracle.com/javase/8/docs/api/index.html?java/lang/Exception.html)
   - 스프링은 체크 예외 발생시 트랜잭션을 롤백하지 않습니다.(커밋합니다.)
   - 복구가 가능한 예외로 간주하고 여기에 대한 처리 코드를 정의해주어야 합니다.
-  - 체크 예외는 반드시 `catch{...}` 구문을 작성하기에 `catch {...}` 내에서 복구 로직을 정의해줍니다.
+  - 체크 예외는 `catch{...}` 구문으로 직접 처리하거나 `throws` 로 선언해서 호출한 쪽에서 처리하도록 전달할 수 있습니다.
   - e.g. 주문 시도 시 결제사 API 장애로 인해 실패시 주문은 성공시키고, 결제 대기 중으로 처리해야 할 경우
   - e.g. Exception.class
 
@@ -176,7 +176,7 @@ Spring Data 는 AOP 기반으로 `@Transactional` 이 붙은 메서드/클래스
 
 
 
-다만 체크 예외를 사용하더라도 `@Transactional` 에 rollbackFor 옵션에 원하는 예외 클래스를 지정하면, 예외가 발생하면 롤백을 합니다. (오버라이딩하는 느낌이라고 생각하시면 될 것 같습니다.)<br/>
+다만 체크 예외를 사용하더라도 `@Transactional` 에 rollbackFor 옵션에 원하는 예외 클래스를 지정하면, 예외가 발생할 때 롤백되도록 설정할 수 있습니다. 반대로 noRollbackFor 옵션을 사용하면 기본적으로 롤백되는 예외에 대해서도 롤백하지 않도록 지정할 수 있습니다.<br/>
 
 <br/>
 
@@ -209,7 +209,7 @@ Spring Data 는 AOP 기반으로 `@Transactional` 이 붙은 메서드/클래스
 
 ### 롤백
 
-스프링은 UncheckedException 발생시에 트랜잭션을 롤백합니다. CheckedException 발생시에는 롤백하지 않고 커밋합니다. 그런데 이런 원칙에 예외를 두는 것 또한 가능합니다. 바로 rollbackFor, noRollbackFor 옵션을 명시해서 특정 익셉션에 대해서 롤백을 하지 않도록 하거나 특정 익셉션에 대해서 롤백을 하도록 지정하는 것이 가능합니다.
+스프링의 기본 롤백 정책에서는 UncheckedException 발생시에 트랜잭션을 롤백합니다. CheckedException 발생시에는 롤백하지 않고 커밋합니다. 그런데 이런 원칙에 예외를 두는 것 또한 가능합니다. 바로 rollbackFor, noRollbackFor 옵션을 명시해서 특정 익셉션에 대해서 롤백을 하지 않도록 하거나 특정 익셉션에 대해서 롤백을 하도록 지정하는 것이 가능합니다.
 
 e.g. 체크드 익셉션이 롤백을 수행하도록 지정
 
@@ -221,7 +221,7 @@ e.g. 체크드 익셉션이 롤백을 수행하도록 지정
 
 e.g. 언체크드 익셉션이 롤백을 수행하지 않도록 지정
 
-> `MyHelloPrintException` 은 RuntimeException 클래스를 상속받은 예외 클래스입니다. Runtime Exception 은 UncheckedException 이기에 예외 발생시 롤백을 하겠지만, 아래 코드에서 noRollbackFor 에 `MyHelloPrintException` 을 명시했으므로 `MyHelloPrintException` 이 발생했을 때 예외가 발생하지 않게 됩니다.
+> `MyHelloPrintException` 은 RuntimeException 클래스를 상속받은 예외 클래스입니다. Runtime Exception 은 UncheckedException 이기에 예외 발생시 기본적으로 롤백을 하겠지만, 아래 코드에서 noRollbackFor 에 `MyHelloPrintException` 을 명시했으므로 `MyHelloPrintException` 이 발생했을 때 트랜잭션을 롤백하지 않게 됩니다.
 
 ```java
 @Transactional(noRollbackFor = MyHelloPrintException.class)
@@ -360,5 +360,3 @@ TestContainers 는 Java 코드로도 생성할 수 있지만, docker-compose 기
 이 외에도 여러가지 방법이 있을 수 있습니다. 제가 생각해냈던 트랜잭션 단위의 롤백, 커밋을 검증하는 방법들은 위의 두 방법인데요. 이 방법들 외에도 여러 방법들이 있지 않을까 싶습니다. 위의 방법이 정해진 방법은 아닙니다. 실무에서는 꼭 직접 생각해서 관련 코드의 상황에 따라 다른 테스트 코드를 직접 생각해서 만들어내야 합니다.<br/>
 
 <br/>
-
-
