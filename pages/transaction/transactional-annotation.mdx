@@ -224,7 +224,7 @@ e.g. 언체크드 익셉션이 롤백을 수행하지 않도록 지정
 > `MyHelloPrintException` 은 RuntimeException 클래스를 상속받은 예외 클래스입니다. Runtime Exception 은 UncheckedException 이기에 예외 발생시 롤백을 하겠지만, 아래 코드에서 noRollbackFor 에 `MyHelloPrintException` 을 명시했으므로 `MyHelloPrintException` 이 발생했을 때 예외가 발생하지 않게 됩니다.
 
 ```java
-@Transactional(noRallbackFor = MyHelloPrintException.class)
+@Transactional(noRollbackFor = MyHelloPrintException.class)
 ```
 
 <br/>
@@ -266,7 +266,7 @@ readOnly =true 옵션은 드라이버나 데이터베이스에 따라 정상동�
 
 readOnly 옵션을 사용하면 읽기에서 라이브러리,JDBC드라이버, 데이터베이스 레벨에서 성능 최적화가 발생할 수 있습니다.<br/>
 
-예를 들어 JPA 와 같은 라이브러리에서는 읽기전용트랜잭션에서는 엔티티의 변경감지 기능을 수행하지 ㅇ낳기에 스냅샷 객체를 생성하지 않습니다. 읽기와 수정 작업시에 데이터 괴리가 염려되는 로직에서는 읽기 로직에 readOnly 를 사용하는 것도 좋은 방법입니다.<br/>
+예를 들어 JPA 와 같은 라이브러리에서는 읽기전용트랜잭션에서는 엔티티의 변경감지 기능을 수행하지 않기에 스냅샷 객체를 생성하지 않습니다. 읽기와 수정 작업시에 데이터 괴리가 염려되는 로직에서는 읽기 로직에 readOnly 를 사용하는 것도 좋은 방법입니다.<br/>
 
 <br/>
 
@@ -290,7 +290,7 @@ public class DoSomeTest{
 
 
 
-### @Commint, @Rollback
+### @Commit, @Rollback
 
 권장되지는 않는 방법이지만, 필요할 경우도 있기에 정리해봅니다. @Transactional 을 명시했더라도 테스트 코드에서 롤백이 되지 않도록 하는 2가지 방법으로는 @Commit, @Rollback(value=false) 를 사용하는 경우를 예로 들 수 있습니다.<br/>
 
@@ -308,7 +308,7 @@ public class DoSomeTest{
 
 ```properties
 spring.profiles.active=test
-spring.datasoruce.url=jdbc:h2:mem:db;DB_CLOSE_DELAY=1
+spring.datasource.url=jdbc:h2:mem:db;DB_CLOSE_DELAY=1
 spring.datasource.username=sa
 ```
 
@@ -337,7 +337,7 @@ TestContainers 는 Java 코드로도 생성할 수 있지만, docker-compose 기
 #### 행위 기반 검증
 
 - when : @Transactional 이 적용된 메서드 내에서 Exception 이 발생하는 상황을 Mockito 를 이용해서 가정
-- then : @Transacitonal 이 적용된 해당 메서드 내에서 예외 발생 이후의 그 다음라인의 로직들이 실행되는지를 테스트 코드에서 Mockito.verify() 를 통해 호출여부를 검증
+- then : @Transactional 이 적용된 해당 메서드 내에서 예외 발생 이후의 그 다음라인의 로직들이 실행되는지를 테스트 코드에서 Mockito.verify() 를 통해 호출여부를 검증
   - 여기까지는 실행되어야 하고
   - 여기까지는 실행이 되지 말아야 한다 
 
@@ -349,7 +349,7 @@ TestContainers 는 Java 코드로도 생성할 수 있지만, docker-compose 기
 
 - given : @Transactional 이 적용된 메서드 수행 전에 특정 데이터가 저장된 상황을 가정해서 데이터를 저장
 - when : @Transactional 이 적용된 메서드 내에서 Exception 이 발생하는 상황을 Mockito 를 이용해서 가정
-- then : @Transacitonal 이 적용된 해당 메서드의 예외 발생 이후에 대해 테스트 코드에서 Assertion 을 통해서 특정값이 원하는 값이 되는지 검증
+- then : @Transactional 이 적용된 해당 메서드의 예외 발생 이후에 대해 테스트 코드에서 Assertion 을 통해서 특정값이 원하는 값이 되는지 검증
 
 <br/>
 
@@ -360,6 +360,5 @@ TestContainers 는 Java 코드로도 생성할 수 있지만, docker-compose 기
 이 외에도 여러가지 방법이 있을 수 있습니다. 제가 생각해냈던 트랜잭션 단위의 롤백, 커밋을 검증하는 방법들은 위의 두 방법인데요. 이 방법들 외에도 여러 방법들이 있지 않을까 싶습니다. 위의 방법이 정해진 방법은 아닙니다. 실무에서는 꼭 직접 생각해서 관련 코드의 상황에 따라 다른 테스트 코드를 직접 생각해서 만들어내야 합니다.<br/>
 
 <br/>
-
 
 
