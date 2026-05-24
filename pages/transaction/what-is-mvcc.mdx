@@ -36,29 +36,64 @@ DBMS 에 다수의 사용자로부터 동시에 트랜잭션이 발생할 때 �
 
 ## MVCC (Multi Version Concurrency Control)
 
-트랜잭션의 격리 수준을 보장하기 위해 비관적락, 낙관적 락을 사용해서 동시성 제어를 할 수도 있지만, 상용 DBMS들은 락을 사용하지 않고도 동시성을 제공 가능하도록 **다중버전 동시성 제어 (MVCC (Multi Version Concurrency Control))** 기능을 제공합니다.<br/>
+트랜잭션의 격리 수준을 보장하기 위해 비관적락, 낙관적 락을 사용해서 동시성 제어를 할 수도 있지만, 상용 DBMS들은 읽기 작업과 쓰기 작업이 서로를 불필요하게 막지 않도록 **다중버전 동시성 제어 (MVCC (Multi Version Concurrency Control))** 기능을 제공합니다.<br/>
 
-MySQL 의 경우 Undo Segment 방식을 통해 MVCC 기능을 제공하고, PostgreSQL의 경우 MGA 방식을 통해 MVCC 기능을 제공합니다.<br/>
+MySQL 의 InnoDB 스토리지 엔진은 undo log/rollback segment 를 이용해 MVCC 를 구현하고, PostgreSQL 은 heap tuple 에 여러 row version 을 저장하는 방식으로 MVCC 를 구현합니다.<br/>
+
+<br/>
+
+
+
+Undo log/rollback segment 기반 방식
+
+- InnoDB 는 현재 버전의 레코드에 마지막으로 변경한 트랜잭션 ID 와 undo log 를 가리키는 포인터를 저장합니다.
+- 변경 전의 값은 undo log 에 저장되며, consistent read 가 과거 버전을 읽어야 할 때 undo log 를 따라가며 이전 row version 을 재구성합니다.
+- undo log 는 트랜잭션 롤백에도 사용되고, 오래된 스냅샷을 참조하는 트랜잭션이 남아있는 동안에는 정리되지 못할 수 있습니다.
+
+- 자세한 내용은 [MySQL 공식 문서 - InnoDB Multi-Versioning](https://dev.mysql.com/doc/refman/8.4/en/innodb-multi-versioning.html), [우아한 형제들 기술블로그 - Aurora MySQL vs Aurora PostgreSQL](https://techblog.woowahan.com/6550/) 을 참고해주시기 바랍니다.
+
+<br/>
+
+PostgreSQL 의 row version 기반 방식
+
+- PostgreSQL 은 UPDATE 시 기존 튜플을 제자리에서 덮어쓰기보다 같은 논리 행의 새로운 row version 을 생성합니다.
+- 각 row version 은 `xmin`, `xmax` 와 같은 트랜잭션 정보를 통해 현재 트랜잭션의 snapshot 에서 보이는지 판단됩니다.
+- 이전 row version 이 더 이상 어떤 트랜잭션에도 보이지 않게 되면 dead tuple 이 되며, VACUUM 이 이를 정리하거나 재사용 가능한 공간으로 표시합니다.
+- 따라서 UPDATE/DELETE 가 많은 워크로드에서는 dead tuple 과 table bloat 가 늘 수 있으므로 autovacuum, VACUUM 주기, fillfactor, 인덱스 설계, HOT update 가능성 등을 함께 고려해야 합니다.
+- 다만 이것이 곧 PostgreSQL 이 UPDATE 가 많은 시스템에 일반적으로 부적합하다는 의미는 아닙니다. PostgreSQL 도 OLTP 워크로드에서 널리 사용되며, 운영 특성에 맞는 vacuum 튜닝과 스키마 설계가 중요합니다.
+- 자세한 내용은 [PostgreSQL 공식 문서 - MVCC](https://www.postgresql.org/docs/current/mvcc.html), [PostgreSQL 공식 문서 - Routine Vacuuming](https://www.postgresql.org/docs/current/routine-vacuuming.html), [PostgreSQL MVCC/SQL](https://medium.com/@fineroot1253/postgresql-mvcc-ssl-2f3ba4ce12da) 을 참고해주시기 바랍니다.
 
 <br/>
 
 
 
-Undo Segment 방식
+## MySQL 과 PostgreSQL 의 워크로드별 특성
 
-- 최신 데이터는 기존 데이터 블록의 레코드에 반영한다.
-- 변경 전의 값은 undo 영역이라는 별도의 공간에 저장하고, 갱신에 대한 버전관리를 한다.
-
-- 자세한 내용은 [우아한 형제들 기술블로그 - Aurora MySQL vs Aurora PostgreSQL](https://techblog.woowahan.com/6550/) 을 참고해주시기 바랍니다.
+MVCC 구현 방식의 차이는 `INSERT`, `SELECT`, `UPDATE` 작업에서 체감되는 운영 특성에도 영향을 줍니다. 다만 특정 DBMS 가 항상 우월하다는 의미는 아니며, 데이터 모델, 인덱스 설계, 트랜잭션 길이, 쿼리 패턴에 따라 결과는 달라질 수 있습니다.<br/>
 
 <br/>
 
-MGA 방식
+### INSERT
 
-- 튜플을 Update 할 때 새로운 값으로 replace 하지 않고 이전 튜플은 유효범위를 마킹해서 처리하는 방식
-- MGA 방식은 트리 구조를 이용하는데, 짧은 시간 내에 같은 행을 수정하는 단발성 업데이트 작업의 빈도가 많다면 당연히 MVCC 로 인해 데드 트리가 많이 생기는데, 이 양이 많아지면 N^M 과 같은 어마 어마한 양의 디스크 사용량이 발생할 수 있다는 사실을 기억해두어야 합니다.
-- 따라서 PostgreSQL 은 Insert/Select 위주의 서비스라면 적합하겠지만, Update 가 많은 시스템에는 MVCC 로 인해 운영상에 이슈가 자주 발생할 소지가 있습니다. 예를 들어 증권데이터처럼 주식에 대한 현재가격이 계속해서 변해야 하는 시스템에는 MVCC 로 인해 발생하는 데드 튜플들을 청소해줘야 하므로 주기적으로 Vaccum 을 수행해줘야 하고, 쓰지 않는 디스크 공간의 파편화가 자주 발생하는 등 부적합한 요소들이 많습니다.
-- 자세한 내용은 [PostgreSQL MVCC/SQL](https://medium.com/@fineroot1253/postgresql-mvcc-ssl-2f3ba4ce12da) 을 참고해주시기 바랍니다.
+MySQL/InnoDB 와 PostgreSQL 모두 `INSERT` 성능이 좋은 편입니다.<br/>
+
+MySQL/InnoDB 는 auto increment 기반 primary key 를 사용하는 단순 OLTP 워크로드에서 안정적인 성능을 보여주는 경우가 많습니다. PostgreSQL 은 `COPY` 를 이용한 대량 적재, 다양한 데이터 타입, 제약 조건, 확장 기능과 함께 사용할 때 강점을 보입니다.<br/>
+
+<br/>
+
+### SELECT
+
+단순한 primary key 조회, range 조회, 짧고 반복적인 웹 서비스 조회에서는 MySQL/InnoDB 가 좋은 성능을 보여주는 경우가 많습니다.<br/>
+
+반면 PostgreSQL 은 복잡한 JOIN, 집계, 윈도우 함수, CTE, 부분 인덱스, 표현식 인덱스, JSONB 조건 검색처럼 DBMS 가 더 많은 쿼리 최적화를 수행해야 하는 상황에서 강점을 보입니다.<br/>
+
+<br/>
+
+### UPDATE
+
+같은 row 의 현재 값을 자주 갱신하는 워크로드에서는 MySQL/InnoDB 가 상대적으로 운영 부담이 적은 경우가 많습니다. InnoDB 도 undo log, purge lag 같은 관리 포인트가 있지만, 현재 row 를 중심으로 변경하고 이전 버전은 undo log 로 관리하는 방식이기 때문입니다.<br/>
+
+PostgreSQL 은 `UPDATE` 시 새로운 row version 을 만들기 때문에 UPDATE/DELETE 가 많을수록 dead tuple 과 table bloat 관리가 중요해집니다. 그렇다고 PostgreSQL 이 UPDATE 가 많은 시스템에 부적합하다는 뜻은 아닙니다. autovacuum 튜닝, fillfactor 조정, 인덱스 설계, HOT update 가 가능한 구조를 고려하면 PostgreSQL 도 OLTP 워크로드에서 충분히 사용할 수 있습니다.<br/>
 
 <br/>
 
@@ -72,7 +107,7 @@ DBMS별로 기본으로 설정된 트랜잭션 격리수준은 아래와 같습�
   - Repeatable Read
 - Oracle
   - Read Committed
-- Postgresql
+- PostgreSQL
   - Read Committed
 
 대부분의 Database는 Read Committed 이상의 레벨을 기본 격리수준으로 채택하고 있습니다.<br/>
